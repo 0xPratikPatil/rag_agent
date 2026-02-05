@@ -14,19 +14,30 @@ from rag_agent.config.logging import get_logger
 from rag_agent.config.settings import Settings, load_settings
 from rag_agent.graph.builder import build_graph, export_built_graph_visualization
 from rag_agent.graph.state import AgentState
-from kairos_llm.model import create_langchain_llm,create_embedding_model
+from kairos_llm.models import ModelType, create_embedding_mode, create_langchain_llm
 
 def _build_llm(settings: Settings) -> BaseChatModel:
+    provider = (settings.llm.provider or "").strip().lower()
+    if provider != "kairos":
+        raise ValueError(f"Unsupported LLM provider: {settings.llm.provider}")
+
+    model_type_name = (settings.llm.model_type or "Default").strip()
+    model_type = getattr(ModelType, model_type_name, ModelType.Default)
     return create_langchain_llm(
-        model_type=settings.llm.model_type,
+        model_type=model_type,
         temperature=settings.llm.temperature,
+        timeout=settings.llm.timeout_s,
     )
 
 
-def _build_embeddings(settings: Settings) -> BaseEmbeddings:
-    return create_embedding_mode(
-        name=settings.embeddings.model_type,
-    )
+def _build_embeddings(settings: Settings) -> Embeddings:
+    provider = (settings.embeddings.provider or "").strip().lower()
+    if provider != "kairos":
+        raise ValueError(f"Unsupported embeddings provider: {settings.embeddings.provider}")
+
+    model_type_name = (settings.embeddings.model_type or "Default").strip()
+    model_type = getattr(ModelType, model_type_name, ModelType.Default)
+    return create_embedding_mode(model_type=model_type)
 
 
 
@@ -38,6 +49,7 @@ def run(query: str) -> str:
     _validate_execution_settings(settings)
     logger.info("Settings loaded", extra={"action": "settings"})
     llm = _build_llm(settings)
+    embeddings = _build_embeddings(settings)
     graph = build_graph(llm=llm, settings=settings)
 
     initial_state: AgentState = {"user_query": query, "loop_count": 0}
@@ -88,8 +100,10 @@ class _GraphOnlyStubModel:
 def _validate_execution_settings(settings: Settings) -> None:
     missing: list[str] = []
 
-    if not os.getenv("OPENAI_API_KEY"):
-        missing.append("OPENAI_API_KEY")
+    if (settings.llm.provider or "").strip().lower() != "kairos":
+        missing.append("RAG_AGENT_LLM_PROVIDER")
+    if (settings.embeddings.provider or "").strip().lower() != "kairos":
+        missing.append("RAG_AGENT_EMBEDDINGS_PROVIDER")
 
     if not settings.databricks.vector_search_endpoint.strip():
         missing.append("RAG_AGENT_DATABRICKS_VECTOR_SEARCH_ENDPOINT")
@@ -108,6 +122,8 @@ def check_config() -> None:
     logger = get_logger(__name__, node="main")
     settings = load_settings()
     _validate_execution_settings(settings)
+    llm = _build_llm(settings)
+    embeddings = _build_embeddings(settings)
     logger.info(
         "Config OK",
         extra={
