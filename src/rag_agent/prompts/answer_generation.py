@@ -24,4 +24,3 @@ def build_answer_generation_prompt() -> ChatPromptTemplate:
     )
 
     return ChatPromptTemplate.from_messages([("system", system), ("human", user)])
-

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from databricks.vector_search.client import VectorSearchClient
-from langchain.retrievers import EnsembleRetriever
+from langchain_classic.retrievers import EnsembleRetriever
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
@@ -18,6 +18,7 @@ from rag_agent.config.settings import Settings, SourceSpec
 @dataclass(frozen=True, slots=True)
 class _DatabricksIndexConfig:
     index_name: str
+    retrieval_channel: str
     query_type: str
     top_k: int
     text_column: str
@@ -42,7 +43,13 @@ class _DatabricksVectorSearchRetriever(BaseRetriever):
             query_type=self.index_config.query_type,
         )
         return _results_to_documents(
-            result, text_column=self.index_config.text_column, query=query
+            result,
+            text_column=self.index_config.text_column,
+            query=query,
+            endpoint_name=self.endpoint_name,
+            index_name=self.index_config.index_name,
+            retrieval_channel=self.index_config.retrieval_channel,
+            query_type=self.index_config.query_type,
         )
 
     async def _aget_relevant_documents(
@@ -53,7 +60,16 @@ class _DatabricksVectorSearchRetriever(BaseRetriever):
         )
 
 
-def _results_to_documents(result: Any, *, text_column: str, query: str) -> list[Document]:
+def _results_to_documents(
+    result: Any,
+    *,
+    text_column: str,
+    query: str,
+    endpoint_name: str,
+    index_name: str,
+    retrieval_channel: str,
+    query_type: str,
+) -> list[Document]:
     if not isinstance(result, dict):
         return []
 
@@ -84,7 +100,13 @@ def _results_to_documents(result: Any, *, text_column: str, query: str) -> list[
         if not isinstance(row, list):
             continue
 
-        metadata: dict[str, Any] = {"retrieval_query": query}
+        metadata: dict[str, Any] = {
+            "retrieval_query": query,
+            "retrieval_channel": retrieval_channel,
+            "retrieval_query_type": query_type,
+            "databricks_vector_search_endpoint": endpoint_name,
+            "databricks_vector_search_index": index_name,
+        }
         for idx, value in enumerate(row):
             if idx < len(columns) and columns[idx]:
                 metadata[columns[idx]] = value
@@ -118,12 +140,14 @@ def _build_vector_search_client(settings: Settings) -> VectorSearchClient:
 def build_ensemble_retriever(*, settings: Settings, source: SourceSpec) -> EnsembleRetriever:
     client = _build_vector_search_client(settings)
     endpoint = settings.databricks.vector_search_endpoint
+    index_name = source.index
 
     vector_retriever = _DatabricksVectorSearchRetriever(
         client=client,
         endpoint_name=endpoint,
         index_config=_DatabricksIndexConfig(
-            index_name=source.vector_index,
+            index_name=index_name,
+            retrieval_channel="vector",
             query_type=settings.retrieval.vector_query_type,
             top_k=settings.retrieval.top_k,
             text_column=settings.retrieval.text_column,
@@ -135,7 +159,8 @@ def build_ensemble_retriever(*, settings: Settings, source: SourceSpec) -> Ensem
         client=client,
         endpoint_name=endpoint,
         index_config=_DatabricksIndexConfig(
-            index_name=source.bm25_index or source.vector_index,
+            index_name=index_name,
+            retrieval_channel="bm25",
             query_type=settings.retrieval.bm25_query_type,
             top_k=settings.retrieval.top_k,
             text_column=settings.retrieval.text_column,
@@ -176,4 +201,3 @@ def build_source_tools(*, settings: Settings) -> list[BaseTool]:
             )
         )
     return tools
-

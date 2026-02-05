@@ -41,7 +41,10 @@ def make_generation_node(*, llm: BaseChatModel) -> Callable[[AgentState], AgentS
             context_lines.append("")
 
         context = "\n".join(context_lines).strip()
-        messages = prompt.format_messages(user_query=user_query, context=context)
+        messages = prompt.format_messages(
+            user_query=user_query,
+            context=context,
+        )
 
         response = llm.invoke(messages)
         answer = getattr(response, "content", response)

@@ -6,7 +6,8 @@ import os
 
 @dataclass(frozen=True, slots=True)
 class LLMSettings:
-    model_name: str = "gpt-4o-mini"
+    provider: str = "kairos"
+    model_type: str = "Default"
     temperature: float = 0.2
     max_tokens: int | None = None
     timeout_s: float = 60.0
@@ -14,9 +15,8 @@ class LLMSettings:
 
 @dataclass(frozen=True, slots=True)
 class EmbeddingsSettings:
-    provider: str = "openai"
-    model_name: str = "text-embedding-3-small"
-    databricks_model_serving_endpoint: str | None = None
+    provider: str = "kairos"
+    model_type: str = "Default"
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,8 +68,7 @@ class DatabricksSettings:
 class SourceSpec:
     source_id: str
     description: str
-    vector_index: str
-    bm25_index: str
+    index: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,26 +89,22 @@ def default_sources() -> tuple[SourceSpec, ...]:
         SourceSpec(
             source_id="ETQ",
             description="ETQ quality processes, deviations, CAPA, SOPs, compliance documentation.",
-            vector_index="ETQ_VECTOR_INDEX",
-            bm25_index="ETQ_BM25_INDEX",
+            index="ETQ_INDEX",
         ),
         SourceSpec(
             source_id="ITEX",
             description="ITEX technical procedures, engineering documentation, internal how-tos.",
-            vector_index="ITEX_VECTOR_INDEX",
-            bm25_index="ITEX_BM25_INDEX",
+            index="ITEX_INDEX",
         ),
         SourceSpec(
             source_id="SN_KB",
             description="ServiceNow Knowledge Base articles: official troubleshooting and guidance.",
-            vector_index="SN_KB_VECTOR_INDEX",
-            bm25_index="SN_KB_BM25_INDEX",
+            index="SN_KB_INDEX",
         ),
         SourceSpec(
             source_id="SN_TICKETS",
             description="ServiceNow incident/request tickets: historical issues, resolutions, timelines.",
-            vector_index="SN_TICKETS_VECTOR_INDEX",
-            bm25_index="SN_TICKETS_BM25_INDEX",
+            index="SN_TICKETS_INDEX",
         ),
     )
 
@@ -160,48 +155,56 @@ def _env_first_str(names: tuple[str, ...], default: str) -> str:
 
 
 def load_settings() -> Settings:
+    llm_defaults = LLMSettings()
+    embeddings_defaults = EmbeddingsSettings()
+    query_planning_defaults = QueryPlanningSettings()
+    retrieval_defaults = RetrievalSettings()
+    ranking_defaults = RankingSettings()
+    context_check_defaults = ContextCheckSettings()
+    runtime_defaults = RuntimeSettings()
+
     llm = LLMSettings(
-        model_name=_env_str("RAG_AGENT_LLM_MODEL", LLMSettings.model_name),
-        temperature=_env_float("RAG_AGENT_LLM_TEMPERATURE", LLMSettings.temperature),
-        timeout_s=_env_float("RAG_AGENT_LLM_TIMEOUT_S", LLMSettings.timeout_s),
+        provider=_env_str("RAG_AGENT_LLM_PROVIDER", llm_defaults.provider),
+        model_type=_env_str("RAG_AGENT_LLM_MODEL_TYPE", llm_defaults.model_type),
+        temperature=_env_float("RAG_AGENT_LLM_TEMPERATURE", llm_defaults.temperature),
+        timeout_s=_env_float("RAG_AGENT_LLM_TIMEOUT_S", llm_defaults.timeout_s),
     )
 
     embeddings = EmbeddingsSettings(
-        provider=_env_str("RAG_AGENT_EMBEDDINGS_PROVIDER", EmbeddingsSettings.provider),
-        model_name=_env_str("RAG_AGENT_EMBEDDINGS_MODEL", EmbeddingsSettings.model_name),
-        databricks_model_serving_endpoint=_env_optional_str(
-            "RAG_AGENT_DATABRICKS_EMBEDDINGS_ENDPOINT"
+        provider=_env_str("RAG_AGENT_EMBEDDINGS_PROVIDER", embeddings_defaults.provider),
+        model_type=_env_str(
+            "RAG_AGENT_EMBEDDINGS_MODEL_TYPE", embeddings_defaults.model_type
         ),
     )
 
     query_planning = QueryPlanningSettings(
         queries_per_source=_env_int(
-            "RAG_AGENT_QUERIES_PER_SOURCE", QueryPlanningSettings.queries_per_source
+            "RAG_AGENT_QUERIES_PER_SOURCE", query_planning_defaults.queries_per_source
         ),
         max_selected_sources=_env_int(
-            "RAG_AGENT_MAX_SELECTED_SOURCES", QueryPlanningSettings.max_selected_sources
+            "RAG_AGENT_MAX_SELECTED_SOURCES", query_planning_defaults.max_selected_sources
         ),
         allow_source_fallback=_env_bool(
             "RAG_AGENT_ALLOW_SOURCE_FALLBACK",
-            QueryPlanningSettings.allow_source_fallback,
+            query_planning_defaults.allow_source_fallback,
         ),
     )
 
     retrieval = RetrievalSettings(
-        top_k=_env_int("RAG_AGENT_RETRIEVAL_TOP_K", RetrievalSettings.top_k),
+        top_k=_env_int("RAG_AGENT_RETRIEVAL_TOP_K", retrieval_defaults.top_k),
         vector_weight=_env_float(
-            "RAG_AGENT_RETRIEVAL_VECTOR_WEIGHT", RetrievalSettings.vector_weight
+            "RAG_AGENT_RETRIEVAL_VECTOR_WEIGHT", retrieval_defaults.vector_weight
         ),
         bm25_weight=_env_float(
-            "RAG_AGENT_RETRIEVAL_BM25_WEIGHT", RetrievalSettings.bm25_weight
+            "RAG_AGENT_RETRIEVAL_BM25_WEIGHT", retrieval_defaults.bm25_weight
         ),
         vector_query_type=_env_str(
-            "RAG_AGENT_RETRIEVAL_VECTOR_QUERY_TYPE", RetrievalSettings.vector_query_type
+            "RAG_AGENT_RETRIEVAL_VECTOR_QUERY_TYPE", retrieval_defaults.vector_query_type
         ),
         bm25_query_type=_env_str(
-            "RAG_AGENT_RETRIEVAL_BM25_QUERY_TYPE", RetrievalSettings.bm25_query_type
+            "RAG_AGENT_RETRIEVAL_BM25_QUERY_TYPE", retrieval_defaults.bm25_query_type
         ),
-        text_column=_env_str("RAG_AGENT_RETRIEVAL_TEXT_COLUMN", RetrievalSettings.text_column),
+        text_column=_env_str("RAG_AGENT_RETRIEVAL_TEXT_COLUMN", retrieval_defaults.text_column),
         return_columns=tuple(
             c.strip()
             for c in _env_str("RAG_AGENT_RETRIEVAL_RETURN_COLUMNS", "text").split(",")
@@ -210,20 +213,22 @@ def load_settings() -> Settings:
     )
 
     ranking = RankingSettings(
-        rrf_k=_env_int("RAG_AGENT_RRF_K", RankingSettings.rrf_k),
-        top_k_context=_env_int("RAG_AGENT_TOP_K_CONTEXT", RankingSettings.top_k_context),
+        rrf_k=_env_int("RAG_AGENT_RRF_K", ranking_defaults.rrf_k),
+        top_k_context=_env_int("RAG_AGENT_TOP_K_CONTEXT", ranking_defaults.top_k_context),
     )
 
     context_check = ContextCheckSettings(
-        min_docs=_env_int("RAG_AGENT_MIN_DOCS", ContextCheckSettings.min_docs),
+        min_docs=_env_int("RAG_AGENT_MIN_DOCS", context_check_defaults.min_docs),
         min_distinct_sources=_env_int(
-            "RAG_AGENT_MIN_DISTINCT_SOURCES", ContextCheckSettings.min_distinct_sources
+            "RAG_AGENT_MIN_DISTINCT_SOURCES",
+            context_check_defaults.min_distinct_sources,
         ),
         max_loop_count=_env_int(
-            "RAG_AGENT_MAX_LOOP_COUNT", ContextCheckSettings.max_loop_count
+            "RAG_AGENT_MAX_LOOP_COUNT", context_check_defaults.max_loop_count
         ),
         min_authoritative_docs=_env_int(
-            "RAG_AGENT_MIN_AUTHORITATIVE_DOCS", ContextCheckSettings.min_authoritative_docs
+            "RAG_AGENT_MIN_AUTHORITATIVE_DOCS",
+            context_check_defaults.min_authoritative_docs,
         ),
         authoritative_sources=tuple(
             s.strip()
@@ -234,7 +239,7 @@ def load_settings() -> Settings:
 
     runtime = RuntimeSettings(
         graph_recursion_limit=_env_int(
-            "RAG_AGENT_GRAPH_RECURSION_LIMIT", RuntimeSettings.graph_recursion_limit
+            "RAG_AGENT_GRAPH_RECURSION_LIMIT", runtime_defaults.graph_recursion_limit
         )
     )
 
@@ -251,8 +256,7 @@ def load_settings() -> Settings:
             SourceSpec(
                 source_id=spec.source_id,
                 description=spec.description,
-                vector_index=_env_str(f"RAG_AGENT_{spec.source_id}_VECTOR_INDEX", spec.vector_index),
-                bm25_index=_env_str(f"RAG_AGENT_{spec.source_id}_BM25_INDEX", spec.bm25_index),
+                index=_env_str(f"RAG_AGENT_{spec.source_id}_INDEX", spec.index),
             )
         )
 
@@ -316,15 +320,8 @@ def load_settings() -> Settings:
     if settings.runtime.graph_recursion_limit <= 0:
         raise ValueError("runtime.graph_recursion_limit must be > 0")
 
-    if not settings.databricks.vector_search_endpoint.strip():
-        raise ValueError("databricks.vector_search_endpoint must be set")
-
     for spec in settings.sources:
         if not spec.source_id.strip():
             raise ValueError("sources[].source_id must be non-empty")
-        if not spec.vector_index.strip():
-            raise ValueError(f"sources[{spec.source_id}].vector_index must be non-empty")
-        if not spec.bm25_index.strip():
-            raise ValueError(f"sources[{spec.source_id}].bm25_index must be non-empty")
 
     return settings

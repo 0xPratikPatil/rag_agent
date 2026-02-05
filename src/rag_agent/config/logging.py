@@ -13,6 +13,7 @@ class LoggingSettings:
 
 
 _CONFIGURED = False
+_HANDLER_NAME = "rag_agent"
 
 
 class _AnsiColorFormatter(logging.Formatter):
@@ -61,10 +62,6 @@ def configure_logging(*, settings: LoggingSettings | None = None) -> None:
     )
 
     root_logger = logging.getLogger()
-    if root_logger.handlers:
-        _CONFIGURED = True
-        return
-
     try:
         level = getattr(logging, settings.level.upper())
     except Exception:
@@ -72,8 +69,14 @@ def configure_logging(*, settings: LoggingSettings | None = None) -> None:
 
     root_logger.setLevel(level)
 
+    for handler in root_logger.handlers:
+        if getattr(handler, "name", None) == _HANDLER_NAME:
+            _CONFIGURED = True
+            return
+
     handler = logging.StreamHandler(stream=sys.stderr)
     handler.setLevel(level)
+    handler.name = _HANDLER_NAME
 
     is_tty = hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
     formatter = _AnsiColorFormatter(use_color=settings.use_color and is_tty)
@@ -87,4 +90,3 @@ def get_logger(name: str, *, node: str | None = None) -> logging.LoggerAdapter:
     configure_logging()
     logger = logging.getLogger(name)
     return logging.LoggerAdapter(logger, {"node": node or "-"})
-
