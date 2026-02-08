@@ -14,7 +14,7 @@ from rag_agent.config.logging import get_logger
 from rag_agent.config.settings import Settings, load_settings
 from rag_agent.graph.builder import build_graph, export_built_graph_visualization
 from rag_agent.graph.state import AgentState
-from kairos_llm.models import ModelType, create_embedding_mode, create_langchain_llm
+from kairos_llm.models import ModelType, create_embedding_model, create_langchain_llm
 
 def _build_llm(settings: Settings) -> BaseChatModel:
     provider = (settings.llm.provider or "").strip().lower()
